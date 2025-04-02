@@ -22,14 +22,14 @@ type Variables = {
   userContext: UserContext;
 };
 
-const depsSchema = z.object({
+const variablesSchema = z.object({
   weatherApiKey: z.string(),
   temperatureUnit: z.enum(["celsius", "fahrenheit"]),
   userName: z.string(),
   userRole: z.string(),
 });
 
-type DependenciesType = z.infer<typeof depsSchema>;
+type VariablesType = z.infer<typeof variablesSchema>;
 
 // =====================================================================
 // SECTION 2: Weather Service Implementation
@@ -82,30 +82,30 @@ const weatherTool = createTool({
   inputSchema: z.object({
     location: z.string().describe("The city or location to get weather for"),
   }),
-  dependenciesSchema: depsSchema,
-  execute: async ({ context, dependencies }) => {
+  variablesSchema,
+  execute: async ({ context, variables }) => {
     return await fetchWeather(context.location, {
-      weatherApiKey: dependencies.weatherApiKey,
-      temperatureUnit: dependencies.temperatureUnit,
+      weatherApiKey: variables.weatherApiKey,
+      temperatureUnit: variables.temperatureUnit,
     });
   },
 });
 
-function buildInstructions(context: { dependencies: DependenciesType }) {
+function buildInstructions(context: { variables: VariablesType }) {
   return `You are an agent that can fetch weather information. 
 
 <user_context>
-  <name>${context.dependencies.userName}</name>
-  <role>${context.dependencies.userRole}</role>
+  <name>${context.variables.userName}</name>
+  <role>${context.variables.userRole}</role>
   <preferences>
-    <temperature_unit>${context.dependencies.temperatureUnit}</temperature_unit>
+    <temperature_unit>${context.variables.temperatureUnit}</temperature_unit>
   </preferences>
 </user_context>
 
 <instructions>
   1. Always start with a personalized greeting that includes the user's name and role
   2. Use the getWeatherForecast tool to fetch current weather data
-  3. Format your response with temperature in ${context.dependencies.temperatureUnit}
+  3. Format your response with temperature in ${context.variables.temperatureUnit}
   4. Include all available data: temperature, conditions, and humidity
   5. Keep responses friendly but concise
 </instructions>
@@ -143,9 +143,9 @@ function buildInstructions(context: { dependencies: DependenciesType }) {
 
 const agent = new Agent({
   name: "WeatherAgent",
-  instructions: buildInstructions,
+  instructions: "", // To be replaced with dynamic instructions
   model: openai("gpt-4o"),
-  dependenciesSchema: depsSchema,
+  variablesSchema,
   tools: { weatherTool },
 });
 
@@ -188,15 +188,18 @@ app.post("/weather", async context => {
       throw new Error("Missing WEATHER_API_KEY environment variable");
     }
 
-    const dependencies: DependenciesType = {
+    const variables: VariablesType = {
       weatherApiKey: apiKey,
       temperatureUnit: "fahrenheit",
       userName: userContext.userName,
       userRole: userContext.userRole,
     };
 
+    const instructions = buildInstructions({ variables });
+
     const result = await agent.generate(`What is the weather in ${location}?`, {
-      dependencies,
+      instructions,
+      variables,
     });
 
     return context.json({
